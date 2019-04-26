@@ -1,9 +1,9 @@
 ---
-title: 版本发布向导
+title: 如何准备Apache Release
 keywords: Dubbo, Apache, Release
 ---
 
-# 版本发布向导
+# 如何准备Apache Release
 
 ## 理解Apache发布的内容和流程
 
@@ -172,6 +172,8 @@ $ mvn release:prepare -Prelease -Darguments="-DskipTests" -DautoVersionSubmodule
 
 > 执行release插件时，如果指定了`-DpushChanges=true`, 插件会自动提交到远端的GitHub仓库中，此时就需要输入GitHub的密码，注意不是输入web页面的登录密码，而是一个`Personal access tokens`，获取方式详见[这里](https://help.github.com/articles/creating-a-personal-access-token-for-the-command-line)
 
+> 这里有一点要注意的是tag， 在执行过程中，需要选择发布的artifactId, 下一个版本artifactId以及发布版本的tag, tag默认的是dubbo-parent-xxxx，需要改成dubbo-xxxx
+
 执行完上述步骤后，你会发现：
 1. `source-release.zip` 和 `bin-release.zip`包已经生成在`dubbo-distribution`目录下，请解压并检查文件是否完整
 2. 本地已经打出相应的tag，同时新增一个commit，名叫`[maven-release-plugin] prepare release dubbo-x.x.x`
@@ -214,7 +216,7 @@ $ mvn -Prelease release:perform -Darguments="-DskipTests" -DautoVersionSubmodule
 4. 添加public key到[KEYS](https://dist.apache.org/repos/dist/dev/incubator/dubbo/KEYS)文件并提交到SVN仓库（第一次做发布的人需要做这个操作，具体操作参考KEYS文件里的说明）。KEYS主要是让参与投票的人在本地导入，用来校验sign的正确性
 
    ```sh
-   $ gpg -a --export your_key_id >> KEYS
+   $ (gpg --list-sigs <your name> && gpg --armor --export <your name>) >> KEYS
    ```
 
 5. 拷贝`distribution/target`下的source相关的包到svn本地仓库`dubbo/${release_version}`
@@ -244,6 +246,12 @@ $ mvn -Prelease release:perform -Darguments="-DskipTests" -DautoVersionSubmodule
    $ svn status
    $ svn commit -m 'prepare for ${release_version} RC1'
    ```
+
+9. 关闭Maven的staging仓库
+
+   此步骤为发布2.7.0及以上版本必须要的步骤。在此之前请先确保所有的artifact都是ok的。登录http://repository.apache.org，点击左侧的`Staging repositories`，然后搜索Dubbo关键字，会出现一系列的仓库，选择你最近上传的仓库，然后点击上方的Close按钮，这个过程会进行一系列检查，检查通过以后，在下方的Summary标签页上出现一个连接，请保存好这个链接，需要放在接下来的投票邮件当中。链接应该是类似这样的: https://repository.apache.org/content/repositories/orgapachedubbo-1015
+
+   > 请注意点击Close可能会出现失败，通常是网络原因，只要重试几次就可以了。可以点击Summary旁边的Activity标签来确认。  
 
 ## 验证Release Candidates
 
@@ -303,11 +311,22 @@ gpg --verify apache-dubbo-incubating-2.6.3-bin-release.zip.asc apache-dubbo-incu
   ```
 - Release candidates match with corresponding tags, you can find tag link and hash in vote email.
   - check the version number in pom.xml are the same
-  - check there are no extra files or directories in the source package, for example, no empty directories or useless log files.  
+  - check there are no extra files or directories in the source package, for example, no empty directories or useless log files，这里需要注意换行符是否一致  
     `diff -r a rc_dir tag_dir`
   - check the top n tag commits, dive into the related files and check if the source package has the same changes
 
-### 检查二进制包的文件内容C
+### 检查三方依赖的合规性
+
+按照Apache基金会合规性规定，源码或者是二进制分发包中均不能包含Category X的依赖，其中就常见的是包含了GPL/LGPL的依赖，即使是传递依赖也不行。因此在发版的时候需要通过以下的命令进行检查：
+
+```sh
+mvn license:add-third-party -Dlicense.useMissingFile
+find . -name THIRD-PARTY.txt | xargs grep -E 'GPL|General Public License' | grep -v Apache | grep -v MIT | grep -v CDDL
+```
+
+如果一个依赖提供了双协议或多重协议，可以选择与Apache最兼容的一个协议。
+
+### 检查二进制包的文件内容
 
 解压缩`apache-dubbo-incubating-${release_version}-bin-release.zip`，进行如下检查:
 
@@ -333,6 +352,9 @@ This is a call for vote to release Apache Dubbo (Incubating) version 2.6.2.
 
 The release candidates:
 https://dist.apache.org/repos/dist/dev/incubator/dubbo/2.6.2/
+
+The staging repo:
+https://repository.apache.org/content/repositories/orgapachedubbo-1005
 
 Git tag for the release:
 https://github.com/apache/incubator-dubbo/tree/dubbo-2.6.2
@@ -382,6 +404,9 @@ A minor issue also can be found in the above thread.
 
 The release candidates (RC1):
 https://dist.apache.org/repos/dist/dev/incubator/dubbo/2.6.4
+
+The staging repo:
+https://repository.apache.org/content/repositories/orgapachedubbo-1005
 
 Git tag for the release (RC1):
 https://github.com/apache/incubator-dubbo/tree/dubbo-2.6.4
@@ -437,7 +462,44 @@ The Apache Dubbo (Incubating) Team
 5. 修改GitHub的Readme文件，将版本号更新到最新发布的版本
 6. 在官网下载[页面](http://dubbo.apache.org/en-us/blog/download.html)上添加最新版本的下载链接。最新的下载链接应该类似[这样](https://www.apache.org/dyn/closer.cgi?path=incubator/dubbo/$VERSION/apache-dubbo-incubating-$VERSION-source-release.zip). 同时更新以前版本的下载链接，改为类似[这样](https://archive.apache.org/dist/incubator/dubbo/$VERSION/apache-dubbo-incubating-$VERSION-bin-release.zip). 具体可以参考过往的[下载链接](https://github.com/apache/incubator-dubbo-website/blob/asf-site/blog/en-us/download.md)
 7. 合并`${release-version}-release`分支到对应的主干分支， 然后删除相应的release分支，例如: `git push origin --delete 2.7.0-release`
-8. 发邮件到 `dev@dubbo.apache.org` 和 `general@incubator.apache.org`，通知社区发布完成。
+8. 发邮件到 `dev@dubbo.apache.org` 和 `general@incubator.apache.org`
+宣布release邮件模板： 
+
+```text
+Hello Community,
+
+The Apache Dubbo(incubating) team is pleased to announce that the
+2.6.6 has just been released.
+
+Apache Dubbo™ (incubating) is a high-performance, java based, open source
+RPC framework. Dubbo offers three key functionalities, which include
+interface based remote call, fault tolerance & load balancing, and
+automatic service registration & discovery.
+
+Both the source release[1] and the maven binary release[2] are available
+now, you can also find the detailed release notes in here[3].
+
+
+If you have any usage questions, or have problems when upgrading or find
+any problems about enhancements included in this release, please don’t
+hesitate to let us know by sending feedback to this mailing list or filing
+an issue on GitHub[4].
+
+
+
+=====
+*Disclaimer*
+
+Apache Dubbo is an effort undergoing incubation at The Apache Software Foundation (ASF), sponsored by the Incubator. Incubation is required of all newly accepted projects until a further review indicates that the infrastructure, communications, and decision making process have stabilized in a manner consistent with other successful ASF projects. While incubation status is not necessarily a reflection of the completeness or stability of the code, it does indicate that the project has yet to be fully endorsed by the ASF.
+
+
+[1] http://dubbo.apache.org/en-us/blog/download.html
+[2] http://central.maven.org/maven2/com/alibaba/dubbo
+[3] https://github.com/apache/incubator-dubbo/releases
+[4] https://github.com/apache/incubator-dubbo/issues
+
+```
+
 
 ## 完成Maven Convenient Binary发布（可选）
 
